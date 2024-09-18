@@ -87,17 +87,6 @@ export class UsersService {
     if (!user) {
       throw new UnauthorizedException('Invalid login credential.');
     }
-    if (user.status === Status.Inactive) {
-      throw new BadRequestException('Email verification is pending');
-    }
-
-    const isCorrectPassword = await comparePassword(
-      payload?.password,
-      user?.password,
-    );
-    if (!isCorrectPassword) {
-      throw new UnauthorizedException('Invalid login credential.');
-    }
 
     const userRoles = await this.roleMappingRepo.find({
       where: { user: { id: user.id } },
@@ -111,6 +100,18 @@ export class UsersService {
       throw new BadRequestException(
         'You do not have permission to access this resource',
       );
+    }
+
+    if (user.status === Status.Inactive) {
+      throw new BadRequestException('Email verification is pending');
+    }
+
+    const isCorrectPassword = await comparePassword(
+      payload?.password,
+      user?.password,
+    );
+    if (!isCorrectPassword) {
+      throw new UnauthorizedException('Invalid login credential.');
     }
 
     const tokenDto = {
