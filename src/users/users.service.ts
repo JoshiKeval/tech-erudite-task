@@ -4,7 +4,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { LoginReqDto, RegistrationReqDto } from './dto';
-import { UsersRepository } from '../core/database/repository';
+import {
+  UsersRepository,
+  RoleRepository,
+  RoleMappingRepository,
+} from '../core/database/repository';
 import {
   comparePassword,
   generateSHA1,
@@ -20,27 +24,46 @@ import { MailService } from 'src/mail/mail.service';
 export class UsersService {
   constructor(
     private readonly userRepo: UsersRepository,
+    private readonly roleRepo: RoleRepository,
+    private readonly roleMappingRepo: RoleMappingRepository,
     private readonly mailService: MailService,
   ) {}
 
   async register(payload: RegistrationReqDto) {
     const isUserExist = await this.isUserExist(payload?.email, payload?.role);
     if (isUserExist) {
-      throw new BadRequestException('Account already exist');
+      throw new BadRequestException('Account already exists');
     }
+
     const hashedPassword = await hash(payload?.password);
     const hashedEmail = generateSHA1(payload?.email);
+
     const user = this.userRepo.create({
       firstName: payload?.firstName,
       lastName: payload?.lastName,
       email: payload?.email,
       password: hashedPassword,
-      role: payload?.role,
       emailVerificationToken: hashedEmail,
     });
-    await this.userRepo.save(user);
+
+    const savedUser = await this.userRepo.save(user);
+
+    const role = await this.roleRepo.findOne({
+      where: { roleType: payload?.role },
+    });
+    if (!role) {
+      throw new BadRequestException('Role does not exist');
+    }
+
+    const roleMapping = this.roleMappingRepo.create({
+      user: savedUser,
+      role_id: role.id,
+    });
+
+    await this.roleMappingRepo.save(roleMapping);
     this.mailService.sendRegistrationEmail(payload?.email, hashedEmail);
-    return 'User Registered Successfully.Please Verfy Your Email.';
+
+    return 'User registered successfully. Please verify your email.';
   }
 
   async validateKeyAndActivateAccount(token: string): Promise<string> {
@@ -60,27 +83,40 @@ export class UsersService {
   }
 
   async adminLogin(payload: LoginReqDto) {
-    if (payload?.role === Roles.CUSTOMER) {
-      throw new BadRequestException('You are not allowed to login from here');
-    }
-    const user = await this.isUserExist(payload?.email, payload?.role);
+    const user = await this.userRepo.findOneBy({ email: payload?.email });
     if (!user) {
-      throw new UnauthorizedException('Invalid login creads.');
+      throw new UnauthorizedException('Invalid login credential.');
     }
     if (user.status === Status.Inactive) {
-      throw new BadRequestException('Email varification is pendding');
+      throw new BadRequestException('Email verification is pending');
     }
+
     const isCorrectPassword = await comparePassword(
       payload?.password,
       user?.password,
     );
     if (!isCorrectPassword) {
-      throw new UnauthorizedException('Invalid login creads.');
+      throw new UnauthorizedException('Invalid login credential.');
+    }
+
+    const userRoles = await this.roleMappingRepo.find({
+      where: { user: { id: user.id } },
+      relations: ['role'],
+    });
+    const hasAdminRole = userRoles.some(
+      (roleMapping) => roleMapping.role.roleType === Roles.ADMIN,
+    );
+
+    if (!hasAdminRole) {
+      throw new BadRequestException(
+        'You do not have permission to access this resource',
+      );
     }
 
     const tokenDto = {
       id: user.id,
-      role: user.role,
+      role:
+        user.roleMappings?.map((mapping) => mapping.role_id).join(', ') || '',
       status: user.status,
     };
 
@@ -89,7 +125,10 @@ export class UsersService {
   }
 
   async isUserExist(email: string, role: string): Promise<Users> {
-    const user = await this.userRepo.findOneBy({ email, role });
+    const user = await this.userRepo.findOne({
+      where: { email, roleMappings: { role: { roleType: role } } },
+      relations: ['roleMappings'],
+    });
     return user;
   }
 }

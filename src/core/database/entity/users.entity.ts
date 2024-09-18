@@ -1,6 +1,7 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
 import { Base } from './base';
 import { Status } from '../../interfaces';
+import { RoleMapping } from './role-mapping.entity';
 
 @Entity('users')
 export class Users extends Base {
@@ -19,9 +20,6 @@ export class Users extends Base {
   @Column({ name: 'password', type: 'varchar', length: 100 })
   password: string;
 
-  @Column({ name: 'role', type: 'varchar', length: 10 })
-  role: string;
-
   @Column({ name: 'email_verification_token', type: 'varchar', length: 200 })
   emailVerificationToken: string;
 
@@ -38,4 +36,7 @@ export class Users extends Base {
 
   @Column({ name: 'is_email_verified', type: 'boolean', default: false })
   isEmailVerified: boolean;
+
+  @OneToMany(() => RoleMapping, (roleMapping) => roleMapping.user)
+  roleMappings: RoleMapping[];
 }

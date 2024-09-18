@@ -18,11 +18,4 @@ export class LoginReqDto {
   })
   @IsString()
   readonly password: string;
-
-  @ApiProperty({
-    example: 'role',
-    required: true,
-  })
-  @IsString()
-  readonly role: string;
 }
